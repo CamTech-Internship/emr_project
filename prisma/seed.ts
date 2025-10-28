@@ -70,6 +70,20 @@ async function main() {
   });
   console.log("✅ Patient created:", patient.name);
 
+  // Create patient user account (linked to patient record)
+  const patientUser = await prisma.user.upsert({
+    where: { email: "patient@demo.local" },
+    update: {},
+    create: {
+      email: "patient@demo.local",
+      passwordHash,
+      role: "PATIENT",
+      hospitalId: hospital.id,
+      patientId: patient.id, // Link to patient record
+    },
+  });
+  console.log("✅ Patient user created:", patientUser.email);
+
   // Create alert
   await prisma.alert.create({
     data: {
@@ -104,7 +118,7 @@ async function main() {
   });
   console.log("✅ Task created for doctor");
 
-  // Create EHR record
+  // Create EHR records
   await prisma.eHRRecord.create({
     data: {
       patientId: patient.id,
@@ -116,13 +130,79 @@ async function main() {
       }),
     },
   });
-  console.log("✅ EHR record created");
+  
+  await prisma.eHRRecord.create({
+    data: {
+      patientId: patient.id,
+      type: "lab_result",
+      payload: JSON.stringify({
+        testName: "Complete Blood Count",
+        date: new Date().toISOString(),
+        results: {
+          WBC: "7.5 K/uL (normal)",
+          RBC: "4.8 M/uL (normal)",
+          Hemoglobin: "14.2 g/dL (normal)",
+        },
+      }),
+    },
+  });
+  console.log("✅ EHR records created");
+
+  // Create prescription
+  await prisma.prescription.create({
+    data: {
+      patientId: patient.id,
+      doctorId: doctor.id,
+      payload: JSON.stringify({
+        medication: "Lisinopril 10mg",
+        dosage: "1 tablet daily",
+        instructions: "Take once daily in the morning with food",
+        refills: 3,
+      }),
+    },
+  });
+  
+  await prisma.prescription.create({
+    data: {
+      patientId: patient.id,
+      doctorId: doctor.id,
+      payload: JSON.stringify({
+        medication: "Vitamin D3 1000 IU",
+        dosage: "1 tablet daily",
+        instructions: "Take with breakfast",
+        refills: 6,
+      }),
+    },
+  });
+  console.log("✅ Prescriptions created");
+
+  // Create messages between patient and doctor
+  await prisma.message.create({
+    data: {
+      fromId: patientUser.id,
+      toId: doctor.id,
+      body: "Hello Dr., I have a question about my recent lab results. When can we discuss them?",
+      threadId: "thread-1",
+    },
+  });
+
+  await prisma.message.create({
+    data: {
+      fromId: doctor.id,
+      toId: patientUser.id,
+      body: "Hi Jane, your lab results look good! I'll review them in detail during your upcoming appointment. Feel free to call if you have urgent concerns.",
+      threadId: "thread-1",
+      seenAt: new Date(),
+    },
+  });
+  console.log("✅ Messages created");
 
   console.log("\n🎉 Seeding completed successfully!");
   console.log("\n📝 Demo credentials:");
   console.log("   Admin:      admin@demo.local / Password123!");
   console.log("   Doctor:     doctor@demo.local / Password123!");
   console.log("   Front Desk: front@demo.local / Password123!");
+  console.log("   Patient:    patient@demo.local / Password123!");
 }
 
 main()

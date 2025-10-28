@@ -11,6 +11,14 @@ const createAppointmentSchema = z.object({
   reason: z.string().optional(),
 });
 
+const updateAppointmentSchema = z.object({
+  id: z.string(),
+  status: z.enum(["scheduled", "cancelled", "completed"]).optional(),
+  startAt: z.string().optional(),
+  endAt: z.string().optional(),
+  reason: z.string().optional(),
+});
+
 /**
  * Get appointments
  * GET /api/patient/appointments?patientId=xxx
@@ -119,6 +127,66 @@ export async function POST(req: NextRequest) {
     }
 
     console.error("Appointment creation error:", error);
+    return NextResponse.json(
+      { error: "internal_error" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Update appointment (cancel, reschedule)
+ * PATCH /api/patient/appointments
+ */
+export async function PATCH(req: NextRequest) {
+  const authCheck = requireRole(req, ["PATIENT", "DOCTOR", "ADMIN", "FRONT_DESK"]);
+  if (!authCheck.ok) {
+    return NextResponse.json(authCheck.body, { status: authCheck.status });
+  }
+
+  try {
+    const body = await req.json();
+    const { id, status, startAt, endAt, reason } = updateAppointmentSchema.parse(body);
+
+    // Build update data
+    const updateData: any = {};
+    if (status) updateData.status = status;
+    if (startAt) updateData.startAt = new Date(startAt);
+    if (endAt) updateData.endAt = new Date(endAt);
+    if (reason !== undefined) updateData.reason = reason;
+
+    const appointment = await prisma.appointment.update({
+      where: { id },
+      data: updateData,
+      include: {
+        patient: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        doctor: {
+          select: {
+            id: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      appointment,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "validation_error", details: error.issues },
+        { status: 400 }
+      );
+    }
+
+    console.error("Appointment update error:", error);
     return NextResponse.json(
       { error: "internal_error" },
       { status: 500 }

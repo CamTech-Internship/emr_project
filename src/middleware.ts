@@ -9,7 +9,11 @@ const protectedApiPrefixes = [
   "/api/doctor",
   "/api/front-desk",
   "/api/messages",
+  "/api/patient/profile",
   "/api/patient/appointments",
+  "/api/patient/prescriptions",
+  "/api/patient/ehr",
+  "/api/patient/messages",
   "/api/patient/triage",
 ];
 

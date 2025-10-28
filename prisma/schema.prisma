@@ -25,6 +25,8 @@ model User {
   role            String   // ADMIN | DOCTOR | FRONT_DESK | PATIENT
   hospitalId      String
   hospital        Hospital @relation(fields: [hospitalId], references: [id])
+  patientId       String?  @unique // Link to Patient record for PATIENT role users
+  patientProfile  Patient? @relation("user_patient", fields: [patientId], references: [id])
   tasks           Task[]
   messagesSent    Message[] @relation("messages_sent")
   messagesRecv    Message[] @relation("messages_recv")
@@ -41,6 +43,7 @@ model Patient {
   name          String
   dob           DateTime?
   contactInfo   String?    // MVP; migrate to encrypted JSON before prod
+  user          User?    @relation("user_patient")
   appointments  Appointment[]
   ehr           EHRRecord[]
   prescriptions Prescription[]
