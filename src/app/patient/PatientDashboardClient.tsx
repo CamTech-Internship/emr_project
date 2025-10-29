@@ -48,6 +48,11 @@ interface EHRRecord {
   createdAt: string;
 }
 
+interface Doctor {
+  id: string;
+  email: string;
+}
+
 interface Message {
   id: string;
   body: string;
@@ -77,6 +82,7 @@ export function PatientDashboardClient({
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [ehrRecords, setEhrRecords] = useState<EHRRecord[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Modals
@@ -84,6 +90,17 @@ export function PatientDashboardClient({
   const [showMessageModal, setShowMessageModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+
+  // Message form state
+  const [messageRecipientId, setMessageRecipientId] = useState("");
+  const [messageBody, setMessageBody] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+
+  // Reply modal state
+  const [showReplyModal, setShowReplyModal] = useState(false);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+  const [replyBody, setReplyBody] = useState("");
+  const [sendingReply, setSendingReply] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -100,11 +117,12 @@ export function PatientDashboardClient({
 
         // Fetch other data using profile ID
         if (data.profile?.id) {
-          const [appointmentsRes, prescriptionsRes, ehrRes, messagesRes] = await Promise.all([
+          const [appointmentsRes, prescriptionsRes, ehrRes, messagesRes, doctorsRes] = await Promise.all([
             fetch(`/api/patient/appointments?patientId=${data.profile.id}`),
             fetch("/api/patient/prescriptions"),
             fetch("/api/patient/ehr"),
             fetch("/api/patient/messages"),
+            fetch("/api/patient/doctors"),
           ]);
 
           if (appointmentsRes.ok) {
@@ -125,6 +143,11 @@ export function PatientDashboardClient({
           if (messagesRes.ok) {
             const msgData = await messagesRes.json();
             setMessages(msgData.messages || []);
+          }
+
+          if (doctorsRes.ok) {
+            const docData = await doctorsRes.json();
+            setDoctors(docData.doctors || []);
           }
         }
       }
@@ -152,6 +175,85 @@ export function PatientDashboardClient({
     } catch (error) {
       console.error("Error cancelling appointment:", error);
       alert("Error cancelling appointment");
+    }
+  };
+
+  const sendMessage = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!messageRecipientId || !messageBody.trim()) {
+      alert("Please select a recipient and enter a message");
+      return;
+    }
+
+    try {
+      setSendingMessage(true);
+      const res = await fetch("/api/patient/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toId: messageRecipientId,
+          body: messageBody,
+        }),
+      });
+
+      if (res.ok) {
+        alert("Message sent successfully!");
+        setMessageBody("");
+        setMessageRecipientId("");
+        setShowMessageModal(false);
+        await fetchData(); // Refresh messages
+      } else {
+        const error = await res.json();
+        alert(`Failed to send message: ${error.error || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+      alert("Error sending message");
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
+  const handleReply = (message: Message) => {
+    setReplyToMessage(message);
+    setShowReplyModal(true);
+  };
+
+  const sendReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!replyToMessage || !replyBody.trim()) {
+      alert("Please enter a message");
+      return;
+    }
+
+    try {
+      setSendingReply(true);
+      const res = await fetch("/api/patient/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toId: replyToMessage.from.id,
+          body: replyBody,
+        }),
+      });
+
+      if (res.ok) {
+        alert("Reply sent successfully!");
+        setReplyBody("");
+        setReplyToMessage(null);
+        setShowReplyModal(false);
+        await fetchData();
+      } else {
+        const error = await res.json();
+        alert(`Failed to send reply: ${error.error || "Unknown error"}`);
+      }
+    } catch (error) {
+      console.error("Error sending reply:", error);
+      alert("Error sending reply");
+    } finally {
+      setSendingReply(false);
     }
   };
 
@@ -384,7 +486,12 @@ export function PatientDashboardClient({
                 ) : (
                   <div className="space-y-3">
                     {messages.map((msg) => (
-                      <MessageCard key={msg.id} message={msg} currentUserEmail={userEmail} />
+                      <MessageCard
+                        key={msg.id}
+                        message={msg}
+                        currentUserEmail={userEmail}
+                        onReply={handleReply}
+                      />
                     ))}
                   </div>
                 )}
@@ -441,15 +548,20 @@ export function PatientDashboardClient({
         )}
 
         {showMessageModal && (
-          <SimpleModal
-            title="Send Message"
-            onClose={() => setShowMessageModal(false)}
-          >
-            <p className="text-gray-600">
-              Message sending functionality will be implemented here.
-              Please contact your doctor directly.
-            </p>
-          </SimpleModal>
+          <MessageModal
+            doctors={doctors}
+            recipientId={messageRecipientId}
+            messageBody={messageBody}
+            sending={sendingMessage}
+            onRecipientChange={setMessageRecipientId}
+            onMessageChange={setMessageBody}
+            onSubmit={sendMessage}
+            onClose={() => {
+              setShowMessageModal(false);
+              setMessageRecipientId("");
+              setMessageBody("");
+            }}
+          />
         )}
 
         {showProfileModal && (
@@ -462,6 +574,22 @@ export function PatientDashboardClient({
               Please contact admin to update your profile.
             </p>
           </SimpleModal>
+        )}
+
+        {/* Reply Modal */}
+        {showReplyModal && replyToMessage && (
+          <PatientReplyModal
+            message={replyToMessage}
+            replyBody={replyBody}
+            sending={sendingReply}
+            onReplyChange={setReplyBody}
+            onSubmit={sendReply}
+            onClose={() => {
+              setShowReplyModal(false);
+              setReplyToMessage(null);
+              setReplyBody("");
+            }}
+          />
         )}
       </main>
     </div>
@@ -584,16 +712,19 @@ function AppointmentCard({
 function MessageCard({
   message,
   currentUserEmail,
+  onReply,
 }: {
   message: Message;
   currentUserEmail: string;
+  onReply: (message: Message) => void;
 }) {
   const isSent = message.from.email === currentUserEmail;
+  const isUnread = !message.seenAt && !isSent;
 
   return (
-    <div className={`border rounded-lg p-4 ${!message.seenAt && !isSent ? "bg-blue-50" : ""}`}>
+    <div className={`border rounded-lg p-4 ${isUnread ? "bg-blue-50 border-blue-200" : ""} hover:shadow-md transition-shadow cursor-pointer`}>
       <div className="flex justify-between items-start mb-2">
-        <div>
+        <div className="flex-1">
           <p className="font-medium text-gray-900">
             {isSent ? `To: ${message.to.email}` : `From: ${message.from.email}`}
           </p>
@@ -601,11 +732,21 @@ function MessageCard({
             {new Date(message.createdAt).toLocaleString()}
           </p>
         </div>
-        {!message.seenAt && !isSent && (
-          <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded-full">
-            New
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {isUnread && (
+            <span className="px-2 py-1 bg-blue-600 text-white text-xs rounded-full">
+              New
+            </span>
+          )}
+          {!isSent && (
+            <button
+              onClick={() => onReply(message)}
+              className="px-3 py-1 bg-blue-600 text-white text-xs rounded-md hover:bg-blue-700"
+            >
+              Reply
+            </button>
+          )}
+        </div>
       </div>
       <p className="text-gray-700">{message.body}</p>
     </div>
@@ -693,6 +834,185 @@ function SimpleModal({
             Close
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Message Modal Component
+function MessageModal({
+  doctors,
+  recipientId,
+  messageBody,
+  sending,
+  onRecipientChange,
+  onMessageChange,
+  onSubmit,
+  onClose,
+}: {
+  doctors: Doctor[];
+  recipientId: string;
+  messageBody: string;
+  sending: boolean;
+  onRecipientChange: (id: string) => void;
+  onMessageChange: (body: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-semibold text-gray-800">Send Message</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+            disabled={sending}
+          >
+            ✕
+          </button>
+        </div>
+        
+        <form onSubmit={onSubmit}>
+          <div className="mb-4">
+            <label htmlFor="recipient" className="block text-sm font-medium text-gray-700 mb-2">
+              Send to:
+            </label>
+            <select
+              id="recipient"
+              value={recipientId}
+              onChange={(e) => onRecipientChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={sending}
+              required
+            >
+              <option value="">Select a doctor...</option>
+              {doctors.map((doctor) => (
+                <option key={doctor.id} value={doctor.id}>
+                  {doctor.email}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-4">
+            <label htmlFor="message" className="block text-sm font-medium text-gray-700 mb-2">
+              Message:
+            </label>
+            <textarea
+              id="message"
+              value={messageBody}
+              onChange={(e) => onMessageChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-gray-900 bg-white"
+              rows={6}
+              placeholder="Type your message here..."
+              disabled={sending}
+              required
+            />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 disabled:opacity-50"
+              disabled={sending}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={sending}
+            >
+              {sending ? "Sending..." : "Send Message"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// Patient Reply Modal Component
+function PatientReplyModal({
+  message,
+  replyBody,
+  sending,
+  onReplyChange,
+  onSubmit,
+  onClose,
+}: {
+  message: Message;
+  replyBody: string;
+  sending: boolean;
+  onReplyChange: (body: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full mx-4">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-semibold text-gray-800">Reply to Message</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+            disabled={sending}
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Original Message */}
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-4">
+          <p className="text-sm text-gray-600 mb-2">
+            <strong>From:</strong> {message.from.email}
+          </p>
+          <p className="text-sm text-gray-600 mb-2">
+            <strong>Sent:</strong> {new Date(message.createdAt).toLocaleString()}
+          </p>
+          <div className="pt-2 border-t border-gray-300">
+            <p className="text-gray-700">{message.body}</p>
+          </div>
+        </div>
+
+        {/* Reply Form */}
+        <form onSubmit={onSubmit}>
+          <div className="mb-4">
+            <label htmlFor="reply" className="block text-sm font-medium text-gray-700 mb-2">
+              Your Reply:
+            </label>
+            <textarea
+              id="reply"
+              value={replyBody}
+              onChange={(e) => onReplyChange(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-gray-900 bg-white"
+              rows={6}
+              placeholder="Type your reply here..."
+              disabled={sending}
+              required
+            />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 disabled:opacity-50"
+              disabled={sending}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={sending}
+            >
+              {sending ? "Sending..." : "Send Reply"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
