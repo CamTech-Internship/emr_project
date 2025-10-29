@@ -1,4 +1,4 @@
-import jwt from "jsonwebtoken";
+import jwt, { SignOptions } from "jsonwebtoken";
 import { cookies } from "next/headers";
 
 const JWT_SECRET = process.env.JWT_SECRET!;
@@ -19,8 +19,12 @@ export interface JWTPayload {
  * @param payload - Token payload
  * @param expiresIn - Token expiration (default: 15m)
  */
-export function signJwt(payload: object, expiresIn = "15m"): string {
-  return jwt.sign(payload, JWT_SECRET, { algorithm: "HS256", expiresIn });
+export function signJwt(payload: object, expiresIn: string | number = "15m"): string {
+  const options: SignOptions = {
+    algorithm: "HS256",
+    expiresIn: expiresIn as any,
+  };
+  return jwt.sign(payload, JWT_SECRET, options);
 }
 
 /**
