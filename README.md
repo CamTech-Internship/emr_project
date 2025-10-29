@@ -98,6 +98,7 @@ After running the seed script:
 | Doctor | doctor@demo.local | Password123! |
 | Front Desk | front@demo.local | Password123! |
 | Patient | patient@demo.local | Password123! |
+
 Hospital Code: `HOS-123`
 
 ## 📚 Documentation
